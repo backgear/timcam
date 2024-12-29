@@ -54,7 +54,7 @@ class Status:
         self._pending = 0
         self._done = False
         self._condition = threading.Condition()
-        self.save_previews = False
+        self.save_previews = True
 
     @keke.ktrace()
     def report(self, key: tuple[int, ...], done: bool, error: bool, obj: Step) -> None:
@@ -94,9 +94,16 @@ class Status:
         h = bounds[3] - bounds[2]
         x = bounds[0]
         y = bounds[3]
+        mx = (bounds[0] + bounds[1]) / 2
+        my = (bounds[2] + bounds[3]) / 2
         self.cairo_matrix = cairo.Matrix()
-        self.cairo_matrix.scale(self.viewport_size[0] / w, self.viewport_size[1] / -h)
-        self.cairo_matrix.translate(-x, -y)
+        sx = self.viewport_size[0] / w
+        sy = self.viewport_size[1] / h
+        self.cairo_matrix.translate(
+            self.viewport_size[0] / 2, self.viewport_size[1] / 2
+        )
+        self.cairo_matrix.scale(min(sx, sy), -min(sx, sy))
+        self.cairo_matrix.translate(-mx, -my)
 
     def submit(self, func):
         self._pending += 1
