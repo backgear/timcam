@@ -81,10 +81,8 @@ class ProcessShapes(Step):
 
         assert not islands
 
-        logger.debug("%d jobs:", len(jobs))
         for j in jobs:
-            logger.debug("  %r", j)
-            self._status.executor.submit(j.lifecycle)
+            self._status.submit(j.lifecycle)
 
     def preview(self, ctx):
         # ctx.set_fill_rule(cairo.FILL_RULE_WINDING)

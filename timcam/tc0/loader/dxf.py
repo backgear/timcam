@@ -34,7 +34,7 @@ class LoadDxf(LoadStep):
         with keke.kev("Jumble.fixup"):
             j.fixup()
         self._next = ProcessShapes(j, key=self._key + (0,), status=self._status)
-        self._status.executor.submit(self._next.lifecycle)
+        self._status.submit(self._next.lifecycle)
 
     def preview(self, ctx) -> None:
         # print(ctx.get_matrix())

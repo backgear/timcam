@@ -70,18 +70,23 @@ class Loop:
         a = self.points[ai]
         b = self.points[bi]
         c = self.points[ci]
-        # print(b)
         det = (b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y)
         return det
+
+    def line_iter(self):
+        yield from _lines(self.points)
+
+    def point_iter(self):
+        yield from self.points
 
 
 class Poly:
     outline: Loop
     holes: Optional[list[Loop]] = None
 
-    def __init__(self, outline):
+    def __init__(self, outline, holes):
         self.outline = outline
-        self.holes = []
+        self.holes = holes or []
 
     def __repr__(self) -> str:
         return "%s(outline=%d points, holes=%d loops)" % (
@@ -89,6 +94,36 @@ class Poly:
             len(self.outline.points),
             len(self.holes),
         )
+
+    def __contains__(self, pt: Point):
+        if pt not in self.outline:
+            return False
+        if self.holes:
+            if any(pt in hole for hole in self.holes):
+                return False
+        return True
+
+    def loop_iter(self):
+        """
+        /!\ Order is subject to change
+        """
+        yield self.outline
+        if self.holes:
+            yield from self.holes
+
+    def line_iter(self):
+        """
+        /!\ Order is subject to change, and does not contain segment connectivity.
+        """
+        for loop in self.loop_iter():
+            yield from loop.line_iter()
+
+    def point_iter(self):
+        """
+        /!\ Order is subject to change, and does not contain segment connectivity.
+        """
+        for loop in self.loop_iter():
+            yield from loop.point_iter()
 
 
 class Jumble:

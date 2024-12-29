@@ -1,9 +1,13 @@
 from __future__ import annotations
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from logging import getLogger
 from typing import Optional
 import keke
 import cairo
+import threading
+
+# from .cairo_pil import to_pil
 
 logger = getLogger(__name__)
 
@@ -18,14 +22,17 @@ class Step:
 
     # TODO better error reporting back to status object too, this ~always
     # happens in threads.
+    @keke.ktrace()
     def lifecycle(self):
-        self._status.report(self._key, done=False, obj=self)
+        self._status.report(self._key, done=False, error=False, obj=self)
         try:
             with keke.kev(self.__class__.__name__, key=str(self._key)):
                 self.run()
         except Exception:
             logger.exception("lifecycle")
-        self._status.report(self._key, done=True, obj=self)
+            self._status.report(self._key, done=True, error=True, obj=self)
+        else:
+            self._status.report(self._key, done=True, error=False, obj=self)
 
     def run(self):
         raise NotImplementedError
@@ -41,22 +48,46 @@ class Status:
     viewport_size = (1920, 1080)
     cairo_matrix: Optional[cairo.Matrix] = None
 
-    def report(self, key: tuple[int, ...], done: bool, obj: Step) -> None:
+    def __init__(self, threads) -> None:
+        self.executor = ThreadPoolExecutor(max_workers=threads)
+        self.next_file_number = 0
+        self._pending = 0
+        self._done = False
+        self._condition = threading.Condition()
+        self.save_previews = False
+
+    @keke.ktrace()
+    def report(self, key: tuple[int, ...], done: bool, error: bool, obj: Step) -> None:
         logger.info("reporting %s done=%s", key, done)
+        if error:
+            with self._condition:
+                self._done = True
+                self._condition.notify_all()
         if done:
-            try:
-                img = cairo.ImageSurface(cairo.FORMAT_ARGB32, *self.viewport_size)
-                ctx = cairo.Context(img)
-                ctx.set_matrix(self.cairo_matrix)
-                with keke.kev(
-                    "preview",
-                    key=".".join(str(i) for i in key),
-                    cls=obj.__class__.__name__,
-                ):
-                    obj.preview(ctx)
-                img.write_to_png("preview/%s.png" % (".".join(str(i) for i in key)))
-            except Exception:
-                logger.exception(".".join(str(i) for i in key))
+            if self.save_previews:
+                try:
+                    img = cairo.ImageSurface(cairo.FORMAT_ARGB32, *self.viewport_size)
+                    ctx = cairo.Context(img)
+                    ctx.set_matrix(self.cairo_matrix)
+                    with keke.kev(
+                        "preview",
+                        key=".".join(str(i) for i in key),
+                        cls=obj.__class__.__name__,
+                    ):
+                        obj.preview(ctx)
+                    with keke.kev("write_to_png"):
+                        img.write_to_png(
+                            "preview/%s.png" % (".".join(str(i) for i in key))
+                        )
+                        # im = to_pil(img)
+                        # im.save("preview/%s.png" % (".".join(str(i) for i in key)))
+                except Exception:
+                    logger.exception(".".join(str(i) for i in key))
+            self._pending -= 1
+            with self._condition:
+                if self._pending == 0:
+                    self._done = True
+                    self._condition.notify_all()
 
     def set_bounds(self, bounds: tuple[int, int, int, int]) -> None:
         w = bounds[1] - bounds[0]
@@ -66,3 +97,18 @@ class Status:
         self.cairo_matrix = cairo.Matrix()
         self.cairo_matrix.scale(self.viewport_size[0] / w, self.viewport_size[1] / -h)
         self.cairo_matrix.translate(-x, -y)
+
+    def submit(self, func):
+        self._pending += 1
+        return self.executor.submit(func)
+
+    def wait(self) -> None:
+        i = 1
+        while not self._done:
+            with self._condition:
+                if not self._done:
+                    result = self._condition.wait(1)
+
+            print("After %d seconds, %d pending" % (i, self._pending))
+            i += 1
+        self.executor.__exit__(None, None, None)
