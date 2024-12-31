@@ -14,6 +14,8 @@ SCALE_FACTOR = 1_000  # mm -> micron
 
 class LoadDxf(LoadStep):
     def run(self):
+        from timcam.algo import lines
+
         with keke.kev("ezdxf.readfile", filename=str(self._path)):
             e = ezdxf.readfile(self._path)
 
@@ -23,6 +25,24 @@ class LoadDxf(LoadStep):
             j.add_line(
                 Point.from_dxf_vec(line.dxf.start, SCALE_FACTOR),
                 Point.from_dxf_vec(line.dxf.end, SCALE_FACTOR),
+            )
+
+        for poly in e.modelspace().query("LWPOLYLINE"):
+            points = poly.get_points()
+            for pt1, pt2 in zip(points, points[1:]):
+                # TODO bendy lines
+                j.add_line(
+                    Point(float(pt1[0]) * SCALE_FACTOR, float(pt1[1]) * SCALE_FACTOR),
+                    Point(float(pt2[0]) * SCALE_FACTOR, float(pt2[1]) * SCALE_FACTOR),
+                )
+
+        for arc in e.modelspace().query("ARC"):
+            # TODO discretize
+            start_point = arc.start_point
+            end_point = arc.end_point
+            j.add_line(
+                Point(start_point[0], start_point[1]),
+                Point(end_point[0], end_point[1]),
             )
 
         with keke.kev("Jumble.close_loops"):

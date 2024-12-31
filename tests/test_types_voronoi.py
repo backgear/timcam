@@ -11,7 +11,7 @@ def test_smoke():
         ]
     )
     v = Voronoi(Poly(l, []))
-    dag = v.dag()
+    dag = v.dag(1)
 
     assert dag.start_rad == 2.5
     assert dag.start_pt == Point(7.5, 2.5)
@@ -49,7 +49,7 @@ def test_smoke_mountain():
         ]
     )
     v = Voronoi(Poly(l, []))
-    dag = v.dag()
+    dag = v.dag(1)
 
     assert dag.start_rad == 3.80782088862309
     assert dag.start_pt == Point(5.117827987412649, 3.807820888623091)

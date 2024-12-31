@@ -3,7 +3,7 @@ from __future__ import annotations
 from logging import getLogger
 
 from .point import Point
-from ..algo import E
+from ..algo import E, lines
 
 from typing import Optional
 
@@ -11,11 +11,6 @@ logger = getLogger(__name__)
 
 EVEN_ODD = 0
 POCKET_ALL = 1
-
-
-def _lines(it):
-    t = list(it)
-    yield from zip(t, t[1:] + t[:1])
 
 
 def _min_idx(it):
@@ -49,7 +44,7 @@ class Loop:
         Returns 0 iif the point is outside.
         """
         count = 0
-        for v1, v2 in _lines(self.points):
+        for v1, v2 in lines(self.points):
             if v1.y <= pt.y:
                 if v2.y > pt.y:
                     if E(v1, v2, pt) > 0:
@@ -74,7 +69,7 @@ class Loop:
         return det
 
     def line_iter(self):
-        yield from _lines(self.points)
+        yield from lines(self.points)
 
     def point_iter(self):
         yield from self.points
@@ -104,7 +99,7 @@ class Poly:
         return True
 
     def loop_iter(self):
-        """
+        r"""
         /!\ Order is subject to change
         """
         yield self.outline
@@ -112,14 +107,14 @@ class Poly:
             yield from self.holes
 
     def line_iter(self):
-        """
+        r"""
         /!\ Order is subject to change, and does not contain segment connectivity.
         """
         for loop in self.loop_iter():
             yield from loop.line_iter()
 
     def point_iter(self):
-        """
+        r"""
         /!\ Order is subject to change, and does not contain segment connectivity.
         """
         for loop in self.loop_iter():

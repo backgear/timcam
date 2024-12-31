@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import sys
 
 import cairo
 import keke
@@ -93,9 +94,9 @@ class PocketStep(Step):
             pc.AddPath(isl.points, pyclipper.JT_SQUARE, pyclipper.ET_CLOSEDPOLYGON)
 
         if self._outline.direction() < 0:
-            self._offset_islands = pc.Execute(-2000)  # 2mm
-        else:
             self._offset_islands = pc.Execute(2000)  # 2mm
+        else:
+            self._offset_islands = pc.Execute(-2000)  # 2mm
 
         with keke.kev("pyvoronoi"):
             self.vors = [
@@ -124,17 +125,13 @@ class PocketStep(Step):
                     )
                 )
                 n += 1
-
                 # TODO visit to make polyline
                 for parent_edge, this_edge in dag.visit_preorder():
                     if parent_edge is None:
                         continue
                     jobs.append(
                         AsymmetricStadiumStep(
-                            this_edge.start_pt,
-                            this_edge.end_pt,
-                            this_edge.start_rad,
-                            this_edge.end_rad,
+                            this_edge.line,
                             key=self._key + (n,),
                             status=self._status,
                         )
@@ -157,6 +154,7 @@ class PocketStep(Step):
         ctx.stroke()
 
         ctx.set_line_width(50)
-        ctx.set_source_rgb(1, 0, 0)
+        for vor in self.vors:
+            vor.draw(ctx)
         for dag in self.dags:
             dag.draw(ctx)

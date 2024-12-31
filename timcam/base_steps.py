@@ -48,13 +48,14 @@ class Status:
     viewport_size = (1920, 1080)
     cairo_matrix: Optional[cairo.Matrix] = None
 
-    def __init__(self, threads) -> None:
+    def __init__(self, threads, save_previews=False) -> None:
         self.executor = ThreadPoolExecutor(max_workers=threads)
         self.next_file_number = 0
+        self.results = {}
         self._pending = 0
         self._done = False
         self._condition = threading.Condition()
-        self.save_previews = True
+        self.save_previews = save_previews
 
     @keke.ktrace()
     def report(self, key: tuple[int, ...], done: bool, error: bool, obj: Step) -> None:
@@ -64,17 +65,10 @@ class Status:
                 self._done = True
                 self._condition.notify_all()
         if done:
+            self.results[key] = obj
             if self.save_previews:
                 try:
-                    img = cairo.ImageSurface(cairo.FORMAT_ARGB32, *self.viewport_size)
-                    ctx = cairo.Context(img)
-                    ctx.set_matrix(self.cairo_matrix)
-                    with keke.kev(
-                        "preview",
-                        key=".".join(str(i) for i in key),
-                        cls=obj.__class__.__name__,
-                    ):
-                        obj.preview(ctx)
+                    img = self.get_preview(obj)
                     with keke.kev("write_to_png"):
                         img.write_to_png(
                             "preview/%s.png" % (".".join(str(i) for i in key))
@@ -88,6 +82,17 @@ class Status:
                 if self._pending == 0:
                     self._done = True
                     self._condition.notify_all()
+
+    def get_preview(self, obj: Step) -> cairo.ImageSurface:
+        img = cairo.ImageSurface(cairo.FORMAT_ARGB32, *self.viewport_size)
+        ctx = cairo.Context(img)
+        ctx.set_matrix(self.cairo_matrix)
+        with keke.kev(
+            "preview",
+            cls=obj.__class__.__name__,
+        ):
+            obj.preview(ctx)
+        return img
 
     def set_bounds(self, bounds: tuple[int, int, int, int]) -> None:
         w = bounds[1] - bounds[0]
@@ -116,6 +121,6 @@ class Status:
                 if not self._done:
                     result = self._condition.wait(1)
 
-            print("After %d seconds, %d pending" % (i, self._pending))
+            logger.warning("After %d seconds, %d pending", i, self._pending)
             i += 1
         self.executor.__exit__(None, None, None)

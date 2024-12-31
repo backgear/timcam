@@ -1,9 +1,13 @@
 from __future__ import annotations
+
+import sys
+
 from math import atan2, pi as PI
 from typing import Generator
 
 import cairo
 import pyvoronoi
+from keke import ktrace, kev
 
 from .point import Point
 from .poly import Poly
@@ -28,26 +32,30 @@ class Voronoi:
 
     def __init__(self, poly: Poly) -> None:
         self._raw = pyvoronoi.Pyvoronoi(1)
-        for line in poly.line_iter():
-            self._raw.AddSegment(line)
-        self._raw.Construct()
+        with kev("addsegment"):
+            for line in poly.line_iter():
+                self._raw.AddSegment(line)
+        with kev("construct"):
+            self._raw.Construct()
 
-        self.edge_points = set(poly.point_iter())
-        self.vertex_indices_on_edge: set[int] = set()
-        self.vertex_indices_inside: set[int] = set()
+        with kev("readback"):
+            self.edge_points = set(poly.point_iter())
+            self.vertex_indices_on_edge: set[int] = set()
+            self.vertex_indices_inside: set[int] = set()
 
-        for i, v in enumerate(self._raw.GetVertices()):
-            pt = Point.from_pyvoronoi_vec(v)
-            if pt in self.edge_points:
-                self.vertex_indices_on_edge.add(i)
-            elif pt in poly:
-                self.vertex_indices_inside.add(i)
+            for i, v in enumerate(self._raw.GetVertices()):
+                pt = Point.from_pyvoronoi_vec(v)
+                if pt in self.edge_points:
+                    self.vertex_indices_on_edge.add(i)
+                elif pt in poly:
+                    self.vertex_indices_inside.add(i)
 
-        # This part can be simplified once there's a fix for
-        # https://github.com/fabanc/pyvoronoi/issues/42
-        self.vertex_outgoing_edges: dict[int, list[int]] = {}
-        for i, e in enumerate(self._raw.GetEdges()):
-            self.vertex_outgoing_edges.setdefault(e.start, []).append(i)
+            # This part can be simplified once there's a fix for
+            # https://github.com/fabanc/pyvoronoi/issues/42
+            self.vertex_outgoing_edges: dict[int, list[int]] = {}
+            for i, e in enumerate(self._raw.GetEdges()):
+                # if e.start not in self.vertex_indices_on_edge and e.start in self.vertex_indices_inside:
+                self.vertex_outgoing_edges.setdefault(e.start, []).append(i)
 
     def draw(self, ctx: cairo.Context) -> None:
         """
@@ -63,16 +71,16 @@ class Voronoi:
             if e.start != -1 and e.end != -1:
                 ctx.move_to(vertices[e.start].X, vertices[e.start].Y)
                 ctx.line_to(vertices[e.end].X, vertices[e.end].Y)
-        ctx.set_source_rgb(0.5, 0.5, 1)
+        ctx.set_source_rgb(0, 0, 0)
         ctx.stroke()
 
-    def dag(self, path_threshold=1.0) -> Dag:
+    def dag(self, path_threshold=500.0) -> Dag:
         """
         Compute a DAG for this Voronoi diagram, that contains all _useful_ nodes.
 
         `path_threshold` is the minimum whisker length to leave; real-world
         polygons tend to have about half the paths unhelpful for medial line
-        calculation.
+        calculation.  By convention this value is in microns.
         """
         vii = self.vertex_indices_inside
         vioe = self.vertex_indices_on_edge
@@ -124,9 +132,12 @@ class Voronoi:
         d = Dag(self._raw, lic_vertex_idx)
         for i in self.vertex_outgoing_edges[lic_vertex_idx]:
             if i in edges:
+                if edges[i]._edge.twin in edges:
+                    edges[edges[i]._edge.twin].next = []
                 d.next.append(edges[i])
                 d.start_rad = edges[i].start_rad
-        return d.simplify()
+        new = d.simplify(path_threshold)
+        return new
 
 
 class BaseDag:
@@ -147,13 +158,14 @@ class Dag(BaseDag):
     def __init__(self, vor: pyvoronoi.Pyvoronoi, starting_vertex: int):
         self.start_pt = Point.from_pyvoronoi_vec(vor.GetVertex(starting_vertex))
         self.start_rad = None
-        self._edge_idx = None
+        self._edge_idx = -999
         self.next = []
 
     def length(self):
         return 0.0
 
-    def simplify(self, min_productive_length=1.0):
+    @ktrace()
+    def simplify(self, min_productive_length):
         """
         After adding items to `self.next`, call this to remove unnecessary paths
         (that are short and unproductive), and ensures that extra edges get
@@ -162,6 +174,7 @@ class Dag(BaseDag):
         This can probably be done more with fewer visits, but split out to be
         more understandable.
         """
+        sys.setrecursionlimit(10000)
         # 1. Ensure edges all have a parent set
         # 2. Filter out non-optimal paths [by hop count]; this is more about
         # removing the opposing half-edges than optimizing the cut path.
@@ -169,11 +182,10 @@ class Dag(BaseDag):
         for parent_edge, this_edge in self.visit_preorder():
             seen.add(this_edge._edge_idx)
 
-            this_edge.parent = parent_edge
             this_edge.next = [
                 edge
                 for edge in this_edge.next
-                if edge._edge_idx not in seen and edge._edge.twin not in seen
+                if (edge._edge_idx not in seen and edge._edge.twin not in seen)
             ]
 
         # Calculate bottom-up length (to the edge of the circle at the tip,
@@ -191,20 +203,30 @@ class Dag(BaseDag):
             this_edge.next = [
                 edge
                 for edge in this_edge.next
-                if edge.path_length - self.start_rad > min_productive_length
+                if (edge.path_length - this_edge.start_rad) > min_productive_length
             ]
             this_edge.next.sort(key=lambda e: (e.path_length, -e.end_pt.y, e.end_pt.x))
+
+        # Attempt to join single-next edges
+        for parent_edge, this_edge in self.visit_postorder():
+            this_edge.join()
+
         return self
 
+    @ktrace()
     def draw(self, ctx):
-        for parent_edge, this_edge in self.visit_postorder():
+        for parent_edge, this_edge in self.visit_preorder():
             if parent_edge is None:
                 continue
             ctx.move_to(*this_edge.start_pt)
-            ctx.line_to(*this_edge.end_pt)
+            for pt in this_edge.line.ptr:
+                ctx.line_to(*pt.point)
         ctx.set_source_rgb(0, 0, 1)
-        ctx.set_line_width(50)
+        ctx.set_line_width(200)
         ctx.stroke()
+
+    def join(self):
+        pass
 
 
 class DagEdge(BaseDag):
@@ -244,6 +266,8 @@ class DagEdge(BaseDag):
         self.vector = self.end_pt - self.start_pt
         self.start_rad = self._rad(self.start_pt)
         self.end_rad = self._rad(self.end_pt)
+        self.line = VariableWidthPolyline(self.start_pt, self.start_rad)
+        self.line.add_point(self.end_pt, self.end_rad)
 
         self.next = []
 
@@ -256,23 +280,17 @@ class DagEdge(BaseDag):
     def length(self):
         return self.vector.length()
 
-
-class DagMultiEdge(BaseDag):
-    def __init__(self, other: DagEdge) -> None:
-        self._edges = []
-        self.prepend(other)
-
-    def prepend(self, other: DagEdge) -> None:
-        if (
-            angle_similarity(self._edges[-1].vector, other.vector) > 0.5
-        ):  # TODO magic number
-            raise TooDifferent()
-        self._edges.insert(0, other)
-        self.start_pt = self._edges[0].start_pt
-        self.start_rad = self._edges[0].start_rad
-        self.end = self._edges[-1].end_pt
-        self.end_rad = self._edges[-1].end_rad
-
-    def draw(self, ctx):
-        for e in self._edges:
-            e.draw(ctx)
+    @ktrace()
+    def join(self):
+        if len(self.next) == 1:
+            if self.line.can_add_point(
+                self.end_pt,
+                self.next[0].line.ptr[1].point,
+                self.next[0].line.ptr[1].radius,
+            ):
+                self.line.extend(self.next[0].line)
+                self.end_pt = self.next[0].end_pt
+                self.end_rad = self.next[0].end_rad
+                self.vector = self.end_pt - self.start_pt
+                self.path_length = self.length() + self.next[0].path_length
+                self.next = self.next[0].next

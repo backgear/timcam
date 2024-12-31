@@ -1,18 +1,24 @@
 from __future__ import annotations
 
+from math import pi as PI
 import pyvoronoi
 
 from dataclasses import dataclass
 from typing import Optional
 
 from .point import Point
+from ..algo import angle_similarity
+
+# This is an arbitrary threshold less than and eighth circle, but keeping it
+# large tends to make longer contiguous paths.
+ANGLE_THRESHOLD = 2 * PI / 32
 
 
 @dataclass
 class VariableWidthPolylinePoint:
     point: Point
     radius: float
-    length: Optional[float]
+    length: Optional[float]  # absent on the first
 
 
 class Polyline:
@@ -54,10 +60,26 @@ class VariableWidthPolyline:
             VariableWidthPolylinePoint(starting_point, starting_radius, None),
         ]
 
+    def extend(self, other_line):
+        self.ptr.extend(other_line.ptr[1:])
+
     def add_point(self, new_point, new_radius):
         """Suitable only for already-discretized lines, not parabola or arc"""
         length = pyvoronoi.Distance(new_point, self.ptr[-1].point)
         self.ptr.append(VariableWidthPolylinePoint(new_point, new_radius, length))
+
+    def can_add_point(self, cur_point, new_point, new_radius):
+        """
+        Returns whether it's similar enough to be joined with this line.
+
+        Only call once the first two points are present.
+        """
+        if cur_point != self.ptr[-1].point:
+            return False
+        t = angle_similarity(
+            new_point - self.ptr[-1].point, self.ptr[-1].point - self.ptr[-2].point
+        )
+        return t < ANGLE_THRESHOLD
 
     def iter_width_along(self, stepover: float):
         """

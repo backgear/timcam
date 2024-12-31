@@ -24,7 +24,6 @@ class SpiralStep(Step):
     @ktrace()
     def run(self):
         rotations = (self.r - self.initial_r) / self.stepover
-        logger.debug("SPIRAL %.2f", rotations)
         # TODO initial helix down
         self.pts = [self.pt]
         # frange?
@@ -56,21 +55,19 @@ class SpiralStep(Step):
 
 
 class AsymmetricStadiumStep(Step):
-    def __init__(self, pt1, pt2, r1, r2, **kwargs):
-        self.line = VariableWidthPolyline(pt1, r1)
-        self.line.add_point(pt2, r2)
+    def __init__(self, line, **kwargs):
+        self.line = line
+        self.discretized = None
         super().__init__(**kwargs)
 
     def run(self) -> None:
-        self.discretized = list(self.line.iter_width_along(500))  # TODO: magic number
+        assert self.discretized is None
+        self.discretized = list(self.line.iter_width_along(200))  # TODO: magic number
 
     def approximate_length(self):
         # TODO move this up into traverse?
         center_distance = (self.discretized[-1][0] - self.discretized[0][0]).length()
         return center_distance + self.discretized[-1][1] - self.discretized[0][1]
-
-    def add_point(self, pt, r):
-        self.line.add_point(pt, r)
 
     def preview(self, ctx: cairo.Context) -> None:
         ctx.set_line_width(50)

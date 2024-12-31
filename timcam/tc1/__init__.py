@@ -43,13 +43,14 @@ class ProcessShapes(Step):
                     n += 1
             elif depth % 2:
                 # inside [=outside of a pocket]
-                inner_islands = []
-                for k, v in list(islands.items()):
-                    if loop_indices & v[0]:
-                        inner_islands.append(v[1])
-                        islands.pop(k)
 
                 for i in loop_indices:
+                    inner_islands = []
+                    for k, v in list(islands.items()):
+                        if i in v[0]:
+                            inner_islands.append(v[1])
+                            islands.pop(k)
+
                     jobs.append(
                         PocketStep(
                             self._jumble.full_loops[i],

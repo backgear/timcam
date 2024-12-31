@@ -83,3 +83,11 @@ def angle_similarity(p1, p2):
     if t > PI:
         t -= PI * 2
     return abs(t)
+
+
+def lines(it):
+    """
+    Returns pairs of points, assuming the first point isn't duplicated yet.
+    """
+    t = list(it)
+    yield from zip(t, t[1:] + t[:1])

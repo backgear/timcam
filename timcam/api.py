@@ -31,6 +31,6 @@ if __name__ == "__main__":
     # open files.
     os.makedirs("preview", exist_ok=True)
     with keke.TraceOutput(file=open("trace.out", "w")):
-        m = Main(4)
+        m = Main(8, True)
         m.load(Path(sys.argv[1]))
         m.wait()
