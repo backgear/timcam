@@ -1,6 +1,7 @@
 import cairo
 from timcam.cairo_pil import to_pil
 
+
 def test_argb32():
     # Size chosen with the hope it not being a multiple of 4 is more likely to
     # test unusual stride
@@ -21,6 +22,7 @@ def test_argb32():
     assert pil_image.getpixel((19, 0)) == (0, 0, 0, 255)
     assert pil_image.getpixel((0, 18)) == (0, 0, 0, 255)
     assert pil_image.getpixel((20, 19)) == (0, 0, 0, 0)
+
 
 def test_rgb24():
     # Size chosen with the hope it not being a multiple of 4 is more likely to

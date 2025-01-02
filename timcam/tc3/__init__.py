@@ -13,6 +13,32 @@ from timcam.algo import outer_tangents
 logger = logging.getLogger(__name__)
 
 
+class DrillStep(Step):
+    def __init__(self, pt, r, **kwargs):
+        self.pt = pt
+        self.r = r
+        super().__init__(**kwargs)
+
+    def run(self):
+        pass
+
+    def preview(self, ctx):
+        pass
+
+
+class HelixStep(Step):
+    def __init__(self, pt, r, **kwargs):
+        self.pt = pt
+        self.r = r
+        super().__init__(**kwargs)
+
+    def run(self):
+        pass
+
+    def preview(self, ctx):
+        pass
+
+
 class SpiralStep(Step):
     def __init__(self, pt, r, **kwargs):
         self.pt = pt
@@ -27,6 +53,8 @@ class SpiralStep(Step):
         # TODO initial helix down
         self.pts = [self.pt]
         # frange?
+        # TODO choose initial value for `f` based on where we want the final
+        # part of the spiral to end up...
         for f in range(int(rotations * 100)):
             angle = f / 100 * 2 * PI
             r = self.initial_r + (f / 100) * self.stepover
@@ -62,25 +90,43 @@ class AsymmetricStadiumStep(Step):
 
     def run(self) -> None:
         assert self.discretized is None
-        self.discretized = list(self.line.iter_width_along(200))  # TODO: magic number
+        self.discretized = list(self.line.iter_width_along(500))  # TODO: magic number
 
     def approximate_length(self):
         # TODO move this up into traverse?
-        center_distance = (self.discretized[-1][0] - self.discretized[0][0]).length()
-        return center_distance + self.discretized[-1][1] - self.discretized[0][1]
+        center_distance = (
+            self.discretized[-1].point - self.discretized[0].point
+        ).length()
+        return (
+            center_distance + self.discretized[-1].radius - self.discretized[0].radius
+        )
 
     def preview(self, ctx: cairo.Context) -> None:
         ctx.set_line_width(50)
-        ctx.set_source_rgb(0, 1, 0)
-        for pt, r in self.discretized[1:]:
-            ctx.new_sub_path()
-            ctx.arc(*pt, r + 2000, 0, 2 * PI)
-        ctx.stroke()
         # gray, previously-finished cut
         ctx.set_source_rgb(0.5, 0.5, 0.5)
         ctx.new_sub_path()
-        ctx.arc(*self.discretized[0][0], self.discretized[0][1] + 2000, 0, 2 * PI)
+        ctx.arc(
+            *self.discretized[0].point, self.discretized[0].radius + 2000, 0, 2 * PI
+        )
         ctx.fill()
+
+        # wide (cutter) path
+        # TODO rounded cap
+        ctx.set_source_rgb(0.2, 0.2, 0.2)
+        ctx.set_line_width(4000)
+        for x in self.discretized[1:]:
+            ctx.new_sub_path()
+            ctx.arc(*x.point, x.radius, x.theta - x.phi, x.theta + x.phi)
+        ctx.stroke()
+
+        # wide (cutter) path
+        ctx.set_source_rgb(0, 1, 0)
+        ctx.set_line_width(50)
+        for x in self.discretized[1:]:
+            ctx.new_sub_path()
+            ctx.arc(*x.point, x.radius, x.theta - x.phi, x.theta + x.phi)
+        ctx.stroke()
 
         # ctx.set_source_rgb(0, 1, 0)
         # line1, line2 = outer_tangents(self.pt1, self.r1, self.pt2, self.r2)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from math import sin, cos, atan2
 from typing import Any
 
 EPSILON = 1e-15
@@ -79,3 +80,16 @@ class Point:
 
     def norm(self):
         return self / self.length()
+
+    @classmethod
+    def from_angle(cls, angle: float) -> Point:
+        return Point(cos(angle), sin(angle))
+
+    def to_angle(self) -> float:
+        return atan2(self.y, self.x)
+
+    def perpendicular(self, is_cw: bool) -> Point:
+        if is_cw:
+            return Point(self.y, -self.x)
+        else:
+            return Point(-self.y, self.x)

@@ -61,6 +61,47 @@ def outer_tangents(
     return ((t1_1, t2_1), (t1_2, t2_2))
 
 
+def outer_tangent_angles(
+    c1: Point, r1: float, c2: Point, r2: float
+) -> tuple[Point, Point, Point, Point]:
+    """
+    Calculates the line angle and an outer tangent intersection (relative) angle.
+
+    Parameters:
+    c1: Center of the first circle
+    r1: Radius of the first circle
+    c2: Center of the second circle
+    r2: Radius of the second circle
+
+    Returns:
+    (theta, phi) -> the angles from c2 are (theta+phi) [left] and (theta-phi)
+    [right].
+    """
+
+    # Calculate the distance between the centers
+    d = (c2 - c1).length()
+
+    # Check if the circles intersect or are contained within each other
+    if d < abs(r1 - r2):  # or d < r1 + r2:
+        # Float rounding can cause this check to fail when it would just barely
+        # pass, when one of the radii is zero.  Because this happens when
+        # following terminal edges in voronoi, fixup here.
+        if r1 == 0.0:
+            d = r2
+        elif r2 == 0.0:
+            d = r1
+        else:
+            return None
+
+    # Calculate the angle between the centers
+    delta = c2 - c1
+    theta = atan2(delta.y, delta.x)
+
+    # Calculate the angle to the tangent points
+    phi = acos((r1 - r2) / d)
+    return theta, phi
+
+
 def pt_line_distance(p, a, b):
     x0, y0 = p
     x1, y1 = a
